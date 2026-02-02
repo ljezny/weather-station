@@ -1,77 +1,46 @@
 #pragma once
+
 #include <Arduino.h>
 #include <Preferences.h>
+#include "../Localization/Localization.hpp"
+
+#define TIME_ZONE_CODE_LENGTH 64
+#define TIME_ZONE_CODE_DEFAULT "Europe/Prague|CET-1CEST,M3.5.0,M10.5.0/3"
+#define LOCATION_NAME_LENGTH 64
+
+// Font scale - for accessibility
+typedef enum {
+    FONT_SCALE_SMALL = 0,   // Smaller fonts - more content visible
+    FONT_SCALE_NORMAL = 1,  // Default font sizes
+    FONT_SCALE_LARGE = 2    // Larger fonts for better readability
+} FontScale_t;
 
 class WeatherConfiguration
 {
 public:
+    void reset();
+    void load();
+    void save();
+
     String ssid;
     String wifiPassword;
-    String timezone;
-    int refreshIntervalMinutes;
+    String timezone = "CET-1CEST,M3.5.0,M10.5.0/3";  // POSIX timezone string
+    bool factoryResetFlag = false;
     
     // Location settings
-    float latitude;
-    float longitude;
-    String locationName;
+    String locationName = "Praha";
+    float latitude = 50.0755;
+    float longitude = 14.4378;
     
-    WeatherConfiguration()
-    {
-        ssid = "";
-        wifiPassword = "";
-        timezone = "CET-1CEST,M3.5.0,M10.5.0/3"; // Czech timezone
-        refreshIntervalMinutes = 10;
-        
-        // Default location: Prague
-        latitude = 50.0755f;
-        longitude = 14.4378f;
-        locationName = "Praha";
-    }
+    // Refresh interval in minutes (default 10 minutes)
+    int refreshIntervalMinutes = 10;
     
-    void load()
-    {
-        Preferences prefs;
-        prefs.begin("weather", true);
-        ssid = prefs.getString("ssid", "");
-        wifiPassword = prefs.getString("pass", "");
-        timezone = prefs.getString("tz", "CET-1CEST,M3.5.0,M10.5.0/3");
-        refreshIntervalMinutes = prefs.getInt("refresh", 10);
-        latitude = prefs.getFloat("lat", 50.0755f);
-        longitude = prefs.getFloat("lon", 14.4378f);
-        locationName = prefs.getString("locName", "Praha");
-        prefs.end();
-    }
+    // UI language
+    String language = "cs";
     
-    void save()
-    {
-        Preferences prefs;
-        prefs.begin("weather", false);
-        prefs.putString("ssid", ssid);
-        prefs.putString("pass", wifiPassword);
-        prefs.putString("tz", timezone);
-        prefs.putInt("refresh", refreshIntervalMinutes);
-        prefs.putFloat("lat", latitude);
-        prefs.putFloat("lon", longitude);
-        prefs.putString("locName", locationName);
-        prefs.end();
-    }
+    // Font scale for accessibility
+    FontScale_t fontScale = FONT_SCALE_NORMAL;
     
-    void reset()
-    {
-        ssid = "";
-        wifiPassword = "";
-        timezone = "CET-1CEST,M3.5.0,M10.5.0/3";
-        refreshIntervalMinutes = 10;
-        latitude = 50.0755f;
-        longitude = 14.4378f;
-        locationName = "Praha";
-    }
-    
-    // Set location from coordinates
-    void setLocation(float lat, float lon, const String& name)
-    {
-        latitude = lat;
-        longitude = lon;
-        locationName = name;
-    }
+private:
+    Preferences prefs;
 };

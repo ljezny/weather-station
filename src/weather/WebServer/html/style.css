@@ -1,0 +1,153 @@
+/* Black and White Layout with Red Accents for E-Ink Display - Dark Theme with Softer Shades */
+
+html, body {
+    height: 100%;
+}
+
+/* Tab Styles */
+.tab {
+    display: flex;
+    border-bottom: 2px solid #888888;
+    margin-bottom: 0; /* Remove gap between tab bar and content */
+}
+
+.tablinks {
+    background-color: #222222; /* Dark gray for tabs */
+    border: 2px solid #888888;
+    color: #c8c8c8;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 16px;
+    border-bottom: none;
+    margin-right: 5px;
+    transition: background-color 0.3s, color 0.3s;
+    border-radius: 10px 10px 0 0;
+}
+
+.tablinks:hover {
+    background-color: #333333; /* Slightly lighter gray */
+}
+
+.tablinks.active {
+    background-color: #a52a2a; /* Softer red */
+    color: #f0f0f0; /* Lighter text for active */
+    border-color: #a52a2a;
+}
+
+/* Tab Content */
+.tabcontent {
+    display: none;
+    padding: 20px;
+    border: 2px solid #888888;
+    border-top: none;
+    background-color: #1a1a1a;
+    border-radius: 0 0 10px 10px;
+}
+
+.tabcontent h3 {
+    margin-top: 0;
+    color: #f0f0f0; /* Lighter for headings */
+    border-bottom: 1px solid #a52a2a;
+    padding-bottom: 10px;
+}
+
+/* Input Sections */
+.input-section {
+    margin-bottom: 20px;
+}
+
+.input-section label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #b8b8b8; /* Slightly darker than main text */
+}
+
+.input-section input[type="text"],
+.input-section input[type="password"],
+.input-section select {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #888888;
+    border-radius: 10px;
+    font-size: 16px;
+    box-sizing: border-box;
+    margin-bottom: 15px;
+    background-color: #2a2a2a; /* Dark gray input background */
+    color: #c8c8c8;
+}
+
+.input-section input[type="text"]:focus,
+.input-section input[type="password"]:focus,
+.input-section select:focus {
+    border-color: #a52a2a;
+    outline: none;
+}
+
+/* Radio Buttons */
+#wifi_select_container {
+    margin-bottom: 15px;
+}
+
+#wifi_select_container label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: normal;
+    color: #b8b8b8;
+}
+
+#wifi_select_container input[type="radio"] {
+    appearance: none;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #888888;
+    margin-right: 10px;
+    position: relative;
+    top: 2px;
+    background-color: #1a1a1a;
+}
+
+#wifi_select_container input[type="radio"]:checked {
+    background-color: #a52a2a;
+    border-color: #a52a2a;
+}
+
+/* Button Section */
+.button-section {
+    text-align: center;
+    margin-top: 20px;
+}
+
+.button-section button {
+    background-color: #a52a2a;
+    color: #f0f0f0;
+    border: none;
+    padding: 15px 30px;
+    font-size: 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.button-section button:hover {
+    background-color: #8b0000; /* Darker red on hover */
+}
+
+/* Responsive Design */
+@media (max-width: 600px) {
+    .main {
+        padding: 10px;
+        border: none; /* Remove border on mobile for cleaner look */
+    }
+    .tab {
+        flex-direction: column;
+    }
+    .tablinks {
+        margin-right: 0;
+        margin-bottom: 5px;
+    }
+    .tabcontent {
+        padding: 10px;
+    }
+}

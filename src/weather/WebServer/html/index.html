@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WEATHER</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fff;
+            color: #000;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #000;
+            color: #fff;
+            padding: 16px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .content {
+            flex: 1;
+            padding: 20px;
+            max-width: 480px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .section { margin-bottom: 24px; }
+        .section-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #000;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #000;
+        }
+        label { 
+            display: block; 
+            font-size: 13px; 
+            font-weight: 600; 
+            color: #000; 
+            margin-bottom: 6px; 
+        }
+        input[type="text"], input[type="password"], input[type="number"], select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #000;
+            border-radius: 0;
+            font-size: 14px;
+            margin-bottom: 16px;
+            background: #fff;
+            color: #000;
+            font-family: inherit;
+        }
+        input:focus, select:focus { 
+            outline: none; 
+            border-color: #0066cc;
+            background: #fff;
+        }
+        .wifi-list {
+            max-height: 160px;
+            overflow-y: auto;
+            border: 2px solid #000;
+            margin-bottom: 16px;
+            background: #fff;
+        }
+        .wifi-item {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: background 0.1s;
+        }
+        .wifi-item:last-child { border-bottom: none; }
+        .wifi-item:hover { background: #f5f5f5; }
+        .wifi-item input[type="radio"] { 
+            accent-color: #0066cc;
+            width: 16px;
+            height: 16px;
+        }
+        .wifi-item.selected { background: #f0f0f0; }
+        .wifi-name { flex: 1; font-size: 14px; font-weight: 500; }
+        .wifi-signal { 
+            font-size: 12px; 
+            color: #666;
+            font-weight: 600;
+        }
+        .hint { 
+            font-size: 11px; 
+            color: #666; 
+            margin-top: -12px; 
+            margin-bottom: 16px; 
+        }
+        button[type="submit"] {
+            width: 100%;
+            padding: 14px;
+            background: #000;
+            color: #fff;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: background 0.2s;
+        }
+        button[type="submit"]:hover { background: #333; }
+        button[type="submit"]:active { background: #0066cc; }
+        .loading { 
+            text-align: center; 
+            color: #666; 
+            padding: 24px; 
+            font-size: 13px; 
+        }
+        .footer {
+            text-align: center;
+            padding: 12px;
+            font-size: 10px;
+            color: #999;
+            border-top: 1px solid #eee;
+        }
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23000' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+        }
+        .lang-tiles {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .lang-tile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 16px 8px;
+            border: 2px solid #ddd;
+            background: #fff;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+        .lang-tile:hover {
+            border-color: #999;
+            background: #f9f9f9;
+        }
+        .lang-tile.selected {
+            border-color: #000;
+            background: #f0f0f0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .lang-tile input[type="radio"] {
+            display: none;
+        }
+        .lang-flag {
+            font-size: 32px;
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+        .lang-name {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #333;
+        }
+        .error-message {
+            color: #c41e3a;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: -12px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .wifi-list.error {
+            border-color: #c41e3a;
+        }
+        .location-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><span style="color:#0066cc">W</span>EATHER</h1>
+    </div>
+    
+    <div class="content">
+        <form id="setup-form" action="/complete-setup" method="post">
+            <div class="section">
+                <div class="section-title" data-i18n="section_language">Language</div>
+                <div class="lang-tiles" id="lang-tiles">
+                    <label class="lang-tile" data-lang="en">
+                        <input type="radio" name="language" value="en">
+                        <span class="lang-flag">🇬🇧</span>
+                        <span class="lang-name">English</span>
+                    </label>
+                    <label class="lang-tile" data-lang="de">
+                        <input type="radio" name="language" value="de">
+                        <span class="lang-flag">🇩🇪</span>
+                        <span class="lang-name">Deutsch</span>
+                    </label>
+                    <label class="lang-tile" data-lang="cs">
+                        <input type="radio" name="language" value="cs">
+                        <span class="lang-flag">🇨🇿</span>
+                        <span class="lang-name">Čeština</span>
+                    </label>
+                    <label class="lang-tile" data-lang="pl">
+                        <input type="radio" name="language" value="pl">
+                        <span class="lang-flag">🇵🇱</span>
+                        <span class="lang-name">Polski</span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="section">
+                <div class="section-title" data-i18n="section_wifi">WiFi Network</div>
+                <label data-i18n="label_select_network">Select Network</label>
+                <div class="wifi-list" id="wifi_select_container">
+                    <div class="loading" data-i18n="loading_networks">Scanning networks...</div>
+                </div>
+                <div class="error-message" id="wifi-error" data-i18n="error_wifi_required">Please select a WiFi network</div>
+                <label data-i18n="label_password">Password</label>
+                <input type="password" name="wifipassword" data-i18n-placeholder="placeholder_password" placeholder="Enter WiFi password">
+            </div>
+            
+            <div class="section">
+                <div class="section-title" data-i18n="section_location">Location</div>
+                
+                <label data-i18n="label_location_name">Location Name</label>
+                <input type="text" name="location_name" id="location_name" maxlength="63" placeholder="e.g. Praha" value="Praha">
+                
+                <div class="location-row">
+                    <div>
+                        <label data-i18n="label_latitude">Latitude</label>
+                        <input type="number" name="latitude" id="latitude" step="0.0001" min="-90" max="90" value="50.0755">
+                    </div>
+                    <div>
+                        <label data-i18n="label_longitude">Longitude</label>
+                        <input type="number" name="longitude" id="longitude" step="0.0001" min="-180" max="180" value="14.4378">
+                    </div>
+                </div>
+                <p class="hint" data-i18n="hint_location">GPS coordinates for weather forecast. Find on Google Maps.</p>
+            </div>
+            
+            <div class="section">
+                <div class="section-title" data-i18n="section_settings">Settings</div>
+                
+                <label data-i18n="label_refresh_interval">Refresh Interval (minutes)</label>
+                <input type="number" name="refresh_interval" id="refresh_interval" min="5" max="60" value="10">
+                <p class="hint" data-i18n="hint_refresh">How often to update weather data (5-60 minutes)</p>
+                
+                <label data-i18n="label_timezone">Timezone</label>
+                <select name="time_zone" id="time_zone">
+                    <option value="Europe/Prague|CET-1CEST,M3.5.0,M10.5.0/3" data-i18n="tz_prague">Prague</option>
+                    <option value="Europe/Bratislava|CET-1CEST,M3.5.0,M10.5.0/3" data-i18n="tz_bratislava">Bratislava</option>
+                    <option value="Europe/Vienna|CET-1CEST,M3.5.0,M10.5.0/3" data-i18n="tz_vienna">Vienna</option>
+                    <option value="Europe/Berlin|CET-1CEST,M3.5.0,M10.5.0/3" data-i18n="tz_berlin">Berlin</option>
+                    <option value="Europe/Warsaw|CET-1CEST,M3.5.0,M10.5.0/3" data-i18n="tz_warsaw">Warsaw</option>
+                    <option value="Europe/London|GMT0BST,M3.5.0/1,M10.5.0" data-i18n="tz_london">London</option>
+                    <option value="US/Eastern|EST5EDT,M3.2.0,M11.1.0" data-i18n="tz_new_york">New York</option>
+                    <option value="US/Pacific|PST8PDT,M3.2.0,M11.1.0" data-i18n="tz_los_angeles">Los Angeles</option>
+                </select>
+            </div>
+            
+            <button type="submit" data-i18n="button_save">Save and Connect</button>
+        </form>
+    </div>
+    
+    <div class="footer">
+        WEATHER v{{VERSION}}
+    </div>
+
+    <script>
+        let i18n = {};
+        
+        async function loadLocalization(lang) {
+            try {
+                const response = await fetch('localization_' + lang + '.json');
+                i18n = await response.json();
+                applyLocalization();
+            } catch (e) {
+                console.error('Failed to load localization:', e);
+            }
+        }
+        
+        function applyLocalization() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (i18n[key]) {
+                    el.textContent = i18n[key];
+                }
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                const key = el.getAttribute('data-i18n-placeholder');
+                if (i18n[key]) {
+                    el.placeholder = i18n[key];
+                }
+            });
+            if (i18n.page_title) {
+                document.title = i18n.page_title;
+            }
+        }
+        
+        function loadConfig() {
+            fetch('config')
+                .then(r => r.json())
+                .then(data => {
+                    document.querySelector("input[name='wifipassword']").value = data.wifiPassword || '';
+                    document.getElementById("time_zone").value = data.timezoneCode || 'Europe/Prague|CET-1CEST,M3.5.0,M10.5.0/3';
+                    document.getElementById("location_name").value = data.locationName || 'Praha';
+                    document.getElementById("latitude").value = data.latitude || 50.0755;
+                    document.getElementById("longitude").value = data.longitude || 14.4378;
+                    document.getElementById("refresh_interval").value = data.refreshInterval || 10;
+                    
+                    const lang = data.language || 'cs';
+                    selectLanguageTile(lang);
+                    loadLocalization(lang);
+                    
+                    loadWifi();
+                })
+                .catch(() => {
+                    loadLocalization('cs');
+                    loadWifi();
+                });
+        }
+        
+        function loadWifi() {
+            fetch('wifi')
+                .then(r => r.json())
+                .then(networks => {
+                    const container = document.getElementById("wifi_select_container");
+                    if (!networks || networks.length === 0) {
+                        container.innerHTML = '<div class="loading">' + (i18n.no_networks || 'No networks found') + '</div>';
+                        return;
+                    }
+                    container.innerHTML = networks.map((n, i) => {
+                        const isSelected = n.current === true;
+                        return '<label class="wifi-item' + (isSelected ? ' selected' : '') + '">' +
+                        '<input type="radio" name="ssid" value="' + n.ssid + '" ' + 
+                        (isSelected ? 'checked' : '') + ' required>' +
+                        '<span class="wifi-name">' + n.ssid + '</span>' +
+                        '<span class="wifi-signal">' + n.percent + '%</span>' +
+                        '</label>';
+                    }).join('');
+                    
+                    container.querySelectorAll('.wifi-item').forEach(item => {
+                        item.addEventListener('click', function() {
+                            container.querySelectorAll('.wifi-item').forEach(i => i.classList.remove('selected'));
+                            this.classList.add('selected');
+                        });
+                    });
+                })
+                .catch(() => {
+                    document.getElementById("wifi_select_container").innerHTML = 
+                        '<div class="loading">' + (i18n.error_networks || 'Failed to load networks') + '</div>';
+                });
+        }
+        
+        function selectLanguageTile(lang) {
+            document.querySelectorAll('.lang-tile').forEach(tile => {
+                tile.classList.remove('selected');
+                const radio = tile.querySelector('input[type="radio"]');
+                if (tile.dataset.lang === lang) {
+                    tile.classList.add('selected');
+                    radio.checked = true;
+                }
+            });
+        }
+        
+        document.querySelectorAll('.lang-tile').forEach(tile => {
+            tile.addEventListener('click', function() {
+                const lang = this.dataset.lang;
+                selectLanguageTile(lang);
+                loadLocalization(lang);
+            });
+        });
+        
+        document.getElementById('setup-form').addEventListener('submit', function(e) {
+            const wifiSelected = document.querySelector('input[name="ssid"]:checked');
+            const wifiContainer = document.getElementById('wifi_select_container');
+            const wifiError = document.getElementById('wifi-error');
+            
+            if (!wifiSelected) {
+                e.preventDefault();
+                wifiContainer.classList.add('error');
+                wifiError.style.display = 'block';
+                wifiContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return false;
+            }
+            
+            wifiContainer.classList.remove('error');
+            wifiError.style.display = 'none';
+        });
+        
+        document.addEventListener('DOMContentLoaded', loadConfig);
+    </script>
+</body>
+</html>

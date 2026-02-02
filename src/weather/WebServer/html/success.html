@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WEATHER</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fff;
+            color: #000;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #000;
+            color: #fff;
+            padding: 16px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .content {
+            flex: 1;
+            padding: 40px 20px;
+            max-width: 480px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        .success-icon {
+            font-size: 64px;
+            margin-bottom: 24px;
+        }
+        .success-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: #000;
+        }
+        .success-message {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 32px;
+            line-height: 1.6;
+        }
+        .countdown {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 24px;
+        }
+        .countdown-number {
+            font-weight: 700;
+            color: #000;
+            font-size: 16px;
+        }
+        .back-link {
+            display: inline-block;
+            padding: 14px 32px;
+            background: #000;
+            color: #fff;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: background 0.2s;
+        }
+        .back-link:hover {
+            background: #333;
+        }
+        .footer {
+            text-align: center;
+            padding: 12px;
+            font-size: 10px;
+            color: #999;
+            border-top: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><span style="color:#0066cc">W</span>EATHER</h1>
+    </div>
+    
+    <div class="content">
+        <div class="success-icon">✓</div>
+        <h2 class="success-title" data-i18n="success_title">Settings Saved</h2>
+        <p class="success-message" data-i18n="success_message">Your settings have been saved successfully. The device will now restart and connect to your WiFi network.</p>
+        <p class="countdown"><span data-i18n="success_redirect">Redirecting in</span> <span class="countdown-number" id="countdown">60</span>s</p>
+        <a href="/" class="back-link" data-i18n="success_back">Back to Settings</a>
+    </div>
+
+    <div class="footer">
+        WEATHER v{{VERSION}}
+    </div>
+
+    <script>
+        let countdown = 60;
+        
+        function startCountdown() {
+            const countdownEl = document.getElementById('countdown');
+            setInterval(() => {
+                countdown--;
+                if (countdown <= 0) {
+                    window.location.href = '/';
+                } else {
+                    countdownEl.textContent = countdown;
+                }
+            }, 1000);
+        }
+        
+        document.addEventListener('DOMContentLoaded', startCountdown);
+    </script>
+</body>
+</html>

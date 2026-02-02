@@ -1,0 +1,14 @@
+<svg width="200" height="60" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .text { font-family: Arial, sans-serif; font-weight: bold; font-size: 36px; fill: #888888; }
+      .accent { fill: #a52a2a; }
+      .sub { font-size: 14px; fill: #a0a0a0; }
+    </style>
+  </defs>
+  <text x="10" y="35" class="text">N</text>
+  <text x="35" y="35" class="text accent">E</text>
+  <text x="55" y="35" class="text">W</text>
+  <text x="85" y="35" class="text">S</text>
+  <text x="115" y="35" class="sub">Station</text>
+</svg>

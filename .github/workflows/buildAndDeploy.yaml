@@ -1,0 +1,75 @@
+name: PlatformIO CI
+
+on:
+  push:
+    tags:
+      - 'Release_[0-9][0-9][0-9]'
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Get FW version
+        run: | 
+          echo Release FW version:
+          echo ${GITHUB_REF_NAME:8:3}
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+      - name: Build PlatformIO Project
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+        run: PLATFORMIO_BUILD_FLAGS="-DVERSION_NUMBER=${GITHUB_REF_NAME:8:3} -DDEBUG=0 -DDEMO=0 -DOTA_ENABLED=1" pio run
+      - name: Combine JSON files
+        uses: jannekem/run-python-script-action@v1
+        with:
+          script: |
+            import glob, json
+            files = glob.glob(".pio/build/*/info.json")
+            print("Found JSON files:")
+            print(files)
+            json_output = []
+            for file in files:
+                with open(file, "r") as f:
+                    json_output.append(json.load(f))
+            with open(".pio/build/info.json", "w") as f:
+                f.write(json.dumps(json_output, indent=3))
+                print("Final JSON file content:")
+                print(json.dumps(json_output, indent=3))
+            
+      - name: Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            .pio/build/*/firmware.bin
+            .pio/build/info.json
+
+  upload-release:
+    needs: build-release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download archive release files
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: tempFirmware
+      - name: FTP upload firmware
+        uses: wangyucode/sftp-upload-action@v2.0.2
+        with:
+          host: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          localDir: 'tempFirmware'
+          remoteDir: 'weather-station'

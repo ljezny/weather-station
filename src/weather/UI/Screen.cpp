@@ -1,767 +1,539 @@
 #include "Screen.hpp"
-#include "../Logging/Logging.hpp"
-#include "../API/PngDecoder.hpp"
-#include "CzechBorder.hpp"
 #include "WeatherIcons.hpp"
+#include "gfxlatin2.h"
+#include "decodeutf8.h"
+#include "../Localization/Localization.hpp"
+#include "../consts.h"
+#include <qrcode.h>
 
-// Globální ukazatel na display pro PNG callback
-static Display* g_displayPtr = NULL;
-static int g_mapX = 0, g_mapY = 0;
-static int g_tileOffsetX = 0, g_tileOffsetY = 0;
-static int g_clipX = 0, g_clipY = 0, g_clipW = 0, g_clipH = 0;
-static int g_tileScale = 1;
-int g_pixelScale = 1;  // Zvětšení pixelů (1 tile pixel = g_pixelScale screen pixels)
-
-// Callback pro vykreslení řádku z PNG - s podporou zvětšení
-static void pngLineCallback(int y, int width, uint16_t* lineBuffer, void* context)
-{
-    if (g_displayPtr == NULL) return;
-    
-    // Pro každý řádek tile pixelů vykreslíme g_pixelScale řádků na displeji
-    for (int py = 0; py < g_pixelScale; py++)
-    {
-        int screenY = g_mapY + g_tileOffsetY + y * g_pixelScale + py;
-        
-        // Clip Y
-        if (screenY < g_clipY || screenY >= g_clipY + g_clipH) continue;
-        
-        for (int i = 0; i < width; i++)
-        {
-            uint16_t color = lineBuffer[i];
-            uint8_t intensity = PngDecoder::getIntensity(color);
-            
-            if (intensity > 0)
-            {
-                // Pro každý tile pixel vykreslíme g_pixelScale x g_pixelScale blok
-                for (int px = 0; px < g_pixelScale; px++)
-                {
-                    int screenX = g_mapX + g_tileOffsetX + i * g_pixelScale + px;
-                    
-                    // Clip X
-                    if (screenX < g_clipX || screenX >= g_clipX + g_clipW) continue;
-                    
-                    // Vykresli pixel podle intenzity
-                    if (intensity >= 4)
-                    {
-                        // Velmi silné - červená
-                        g_displayPtr->drawPixel(screenX, screenY, COLOR_RED);
-                    }
-                    else if (intensity >= 3)
-                    {
-                        // Silné - černá plná
-                        g_displayPtr->drawPixel(screenX, screenY, COLOR_BLACK);
-                    }
-                    else if (intensity >= 2)
-                    {
-                        // Mírné - šachovnice
-                        if ((screenX + screenY) % 2 == 0)
-                        {
-                            g_displayPtr->drawPixel(screenX, screenY, COLOR_BLACK);
-                        }
-                    }
-                    else
-                    {
-                        // Slabé - řídké tečky
-                        if ((screenX + screenY) % 3 == 0)
-                        {
-                            g_displayPtr->drawPixel(screenX, screenY, COLOR_BLACK);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-WeatherScreen::WeatherScreen()
+WeatherScreen::WeatherScreen() : display()
 {
 }
 
 void WeatherScreen::drawBootScreen()
 {
     display.beginDraw();
-    display.clear();
-    
-    // Draw title centered
-    display.drawText(LARGE, "Weather Radar", display.getDisplayWidth() / 2, display.getDisplayHeight() / 2 - 40, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    display.drawText(SMALL, "Česká republika", display.getDisplayWidth() / 2, display.getDisplayHeight() / 2, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    display.drawText(TINY, "Načítám...", display.getDisplayWidth() / 2, display.getDisplayHeight() / 2 + 50, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    
-    display.updateFullscreen();
+    display.firstPage();
+    do {
+        display.clear();
+        
+        int centerX = display.getDisplayWidth() / 2;
+        int centerY = display.getDisplayHeight() / 2;
+        
+        // Draw logo/title
+        display.drawText(HUGE, "Weather", centerX, centerY - 50,
+            CENTER, CENTER, 0, 0, GxEPD_BLACK);
+        display.drawText(LARGE, "Station", centerX, centerY + 20,
+            CENTER, CENTER, 0, 0, GxEPD_DARKGREY);
+        
+        // Version
+        String versionStr = "v" + String(VERSION_NUMBER);
+        display.drawText(SMALL, versionStr, centerX, display.getDisplayHeight() - 40,
+            CENTER, CENTER, 0, 0, GxEPD_DARKGREY);
+            
+    } while (display.nextPage());
     display.endDraw();
 }
 
-void WeatherScreen::drawHeader(WeatherScreenData_t& data, const String& locationName)
+void WeatherScreen::drawPopup(ScreenInfoData_t info)
 {
-    int headerHeight = 50;
+    // Define popup dimensions - at bottom of screen, aligned to 8 pixels
+    int popupHeight = 400;  // divisible by 8
+    int popupWidth = display.getDisplayWidth();  // full width, divisible by 8
+    int popupX = 0;
+    int popupY = display.getDisplayHeight() - popupHeight;  // align to bottom
     
-    // Header background
-    display.fillRect(0, 0, display.getDisplayWidth(), headerHeight, COLOR_BLACK);
-    
-    // Location name
-    display.drawText(MEDIUM, locationName, 20, headerHeight / 2, 
-                     LEADING, CENTER, 0, 0, COLOR_WHITE);
-    
-    // Current time
-    if (data.currentTime > 0)
-    {
-        struct tm* timeinfo = localtime(&data.currentTime);
-        char timeStr[20];
-        strftime(timeStr, sizeof(timeStr), "%H:%M", timeinfo);
-        display.drawText(MEDIUM, String(timeStr), display.getDisplayWidth() - 20, headerHeight / 2, 
-                         TRAILING, CENTER, 0, 0, COLOR_WHITE);
-    }
-}
-
-void WeatherScreen::drawStatusBar(WeatherScreenData_t& data)
-{
-    int barY = display.getDisplayHeight() - 35;
-    int barHeight = 35;
-    
-    // Status bar background
-    display.fillRect(0, barY, display.getDisplayWidth(), barHeight, COLOR_BLACK);
-    
-    // Current time
-    if (data.currentTime > 0)
-    {
-        struct tm* timeinfo = localtime(&data.currentTime);
-        char dateStr[30];
-        strftime(dateStr, sizeof(dateStr), "%d.%m.%Y %H:%M", timeinfo);
-        display.drawText(TINY, String(dateStr), 15, barY + barHeight / 2, 
-                         LEADING, CENTER, 0, 0, COLOR_WHITE);
-    }
-    
-    // Battery level
-    String batteryStr = String(data.batteryLevel) + "%";
-    display.drawText(TINY, batteryStr, display.getDisplayWidth() - 15, barY + barHeight / 2, 
-                     TRAILING, CENTER, 0, 0, COLOR_WHITE);
-    
-    // WiFi signal
-    String wifiStr = "WiFi: " + String(data.wifiSignalLevel) + "%";
-    display.drawText(TINY, wifiStr, display.getDisplayWidth() - 80, barY + barHeight / 2, 
-                     TRAILING, CENTER, 0, 0, COLOR_WHITE);
-}
-
-void WeatherScreen::drawRadarLegend()
-{
-    // Legenda na pravé straně - pro landscape layout
-    int legendX = display.getDisplayWidth() - 130;
-    int legendY = 60;
-    int boxSize = 18;
-    int spacing = 8;
-    
-    // Legend title
-    display.drawText(EXTRA_SMALL, "Intenzita:", legendX, legendY, 
-                     LEADING, TRAILING, 0, 0, COLOR_BLACK);
-    
-    // Legend items - using patterns for e-ink
-    // No rain - white
-    int y0 = legendY + spacing;
-    display.drawRect(legendX, y0, boxSize, boxSize, COLOR_BLACK);
-    display.drawText(EXTRA_SMALL, "Bez srážek", legendX + boxSize + 5, y0 + boxSize/2, 
-                     LEADING, CENTER, 0, 0, COLOR_BLACK);
-    
-    // Light rain - sparse dots
-    int y1 = y0 + boxSize + spacing;
-    display.drawRect(legendX, y1, boxSize, boxSize, COLOR_BLACK);
-    for (int i = 0; i < 4; i++) {
-        display.drawPixel(legendX + 4 + (i % 2) * 9, y1 + 4 + (i / 2) * 9, COLOR_BLACK);
-    }
-    display.drawText(EXTRA_SMALL, "Slabý", legendX + boxSize + 5, y1 + boxSize/2, 
-                     LEADING, CENTER, 0, 0, COLOR_BLACK);
-    
-    // Moderate - checkered
-    int y2 = y1 + boxSize + spacing;
-    display.drawRect(legendX, y2, boxSize, boxSize, COLOR_BLACK);
-    for (int i = 0; i < boxSize; i += 2) {
-        for (int j = 0; j < boxSize; j += 2) {
-            if ((i + j) % 4 == 0) {
-                display.drawPixel(legendX + i, y2 + j, COLOR_BLACK);
-            }
-        }
-    }
-    display.drawText(EXTRA_SMALL, "Mírný", legendX + boxSize + 5, y2 + boxSize/2, 
-                     LEADING, CENTER, 0, 0, COLOR_BLACK);
-    
-    // Heavy - dense
-    int y3 = y2 + boxSize + spacing;
-    display.fillRect(legendX, y3, boxSize, boxSize, COLOR_BLACK);
-    display.drawText(EXTRA_SMALL, "Silný", legendX + boxSize + 5, y3 + boxSize/2, 
-                     LEADING, CENTER, 0, 0, COLOR_BLACK);
-    
-    // Intense - red
-    int y4 = y3 + boxSize + spacing;
-    display.fillRect(legendX, y4, boxSize, boxSize, COLOR_RED);
-    display.drawText(EXTRA_SMALL, "Přívalový", legendX + boxSize + 5, y4 + boxSize/2, 
-                     LEADING, CENTER, 0, 0, COLOR_BLACK);
-}
-
-void WeatherScreen::drawRadarScreen(WeatherScreenData_t& data, RadarStorage& storage)
-{
-    LOGD("Drawing radar screen");
-    
+    display.setPopupMode(true, popupX, popupY, popupWidth, popupHeight);
     display.beginDraw();
-    display.clear();
     
-    // Fullscreen layout s 5% marginem
-    // Displej: 800x480
-    int screenWidth = display.getDisplayWidth();   // 800
-    int screenHeight = display.getDisplayHeight(); // 480
+    // White background with border
+    display.fillRect(popupX, popupY, popupWidth, popupHeight, GxEPD_WHITE);
+    display.fillRect(popupX, popupY, popupWidth, 4, GxEPD_BLACK);  // Top border
     
-    int marginX = screenWidth * 5 / 100;   // 40px (5%)
-    int marginY = screenHeight * 5 / 100;  // 24px (5%)
+    int contentY = popupY + 40;
+    int centerX = display.getDisplayWidth() / 2;
     
-    int mapX = marginX;
-    int mapY = marginY;
-    int mapWidth = screenWidth - 2 * marginX;   // 720px
-    int mapHeight = screenHeight - 2 * marginY; // 432px
+    // Title
+    if (info.title.length() > 0) {
+        display.drawText(MEDIUM, info.title, centerX, contentY,
+            CENTER, LEADING, 0, 0, GxEPD_BLACK);
+        contentY += 50;
+    }
     
-    // Map border
-    display.drawRect(mapX - 1, mapY - 1, mapWidth + 2, mapHeight + 2, COLOR_BLACK);
-    
-    // Parametry pro tile grid a obrys ČR
-    // ČR se rozprostírá přibližně na: lon 12.1-18.9 (6.8°), lat 48.5-51.1 (2.6°)
-    // Střed ČR: lon ~15.5, lat ~49.8
-    // 
-    // Pro zoom 6: 1 tile = 5.625° longitude, ~2.8° latitude (u 50°N)
-    // Pro zoom 7: 1 tile = 2.8125° longitude, ~1.4° latitude
-    // 
-    // Zoom 7 je lepší pro detail ČR - potřebujeme ~2.5 tiles horizontálně
-    // Ale máme jen 2x2 grid, takže použijeme zoom 6 s menším scale
-    
-    int zoom = 6;
-    int baseTileX = 34;  // Z getCzechTileCoords pro zoom 6
-    int baseTileY = 21;
-    
-    // ČR v tile souřadnicích zoom 6:
-    // - zabírá cca 170px horizontálně a 120px vertikálně v 256px tile
-    // - potřebujeme scale tak, aby se to vešlo do viewportu
-    // 
-    // Originální 2x2 tile grid = 512x512 px
-    // ČR je cca v prostředních 40% horizontálně a 25% vertikálně
-    // ČR zabírá cca 200x130 px z 512x512
-    // 
-    // Pro 720x432 viewport chceme ČR roztáhnout:
-    // Scale = 1 by dalo 200x130 pro ČR
-    // Potřebujeme škálovat nahoru (scale < 1)
-    // Ale scale musí být int, takže místo toho použijeme vyšší zoom
-    
-    // S zoom 6 a scale 1: ČR je cca 200x130px
-    // Chceme aby ČR zabírala většinu z 720x432
-    // Poměr: 720/200 = 3.6x, 432/130 = 3.3x
-    // Nejmenší je 3.3x - takže použijeme scale že tile pixely jsou 3x větší
-    // To ale nejde přímo, musíme použít jiný přístup
-    
-    // Použijeme "sub-pixel" rendering - každý pixel z tile vykreslíme jako NxN blok
-    int pixelScale = 3;  // Každý pixel radarových dat = 3x3 pixely na displeji
-    
-    // S pixelScale=2: 512*2 = 1024px, stále příliš velké
-    // Potřebujeme vykreslit jen výřez kolem ČR
-    // 
-    // ČR souřadnice (GPS): lon 12.09 - 18.86, lat 48.55 - 51.11
-    // To odpovídá v tile pixelech na zoom 6 (base tile 34,21):
-    // X: cca 8 - 248 px (šířka ~240px)  
-    // Y: cca 145 - 295 px (výška ~150px)
-    //
-    // S pixelScale 2: 240*2=480, 150*2=300 - to se dobře vejde do 720x432 s marginem
-    
-    // Přesnější hodnoty ČR v tile pixelech (zoom 6, base 34,21)
-    int czStartX = 8;     // Pixel X kde začíná ČR v rámci 512px gridu (lon 12.09)
-    int czStartY = 145;   // Pixel Y kde začíná ČR v rámci 512px gridu (lat 51.11)
-    int czWidth = 240;    // Šířka ČR v tile pixelech
-    int czHeight = 150;   // Výška ČR v tile pixelech
-    
-    // Snížíme pixelScale na 2 pro lepší fit
-    pixelScale = 2;
-    
-    // Vycentrování v mapovém viewportu
-    int scaledCzWidth = czWidth * pixelScale;   // 480
-    int scaledCzHeight = czHeight * pixelScale; // 300
-    int offsetX = (mapWidth - scaledCzWidth) / 2 - czStartX * pixelScale;
-    int offsetY = (mapHeight - scaledCzHeight) / 2 - czStartY * pixelScale;
-    
-    // Pro kompatibilitu se stávajícím kódem
-    int tileScale = 1;  // Neškálujeme dolů, ale používáme pixelScale pro zvětšení
-    int tileDisplaySize = 256 * pixelScale; // Každá tile je nyní 512px
-    
-    // PRVNÍ: Vykresli obrys České republiky červeně s tlustou čarou (5px)
-    // Upravíme CzechBorder pro pixelScale
-    {
-        int prevX = -1, prevY = -1;
-        extern void latLonToTilePixel(double lat, double lon, int zoom, int baseTileX, int baseTileY, int& px, int& py);
-        extern const double CZ_BORDER_GPS[][2];
-        extern const int CZ_BORDER_POINTS;
+    // QR Code
+    if (info.qrCode.length() > 0) {
+        // Generate QR code
+        QRCode qrcode;
+        uint8_t qrcodeData[qrcode_getBufferSize(3)];
+        qrcode_initText(&qrcode, qrcodeData, 3, ECC_LOW, info.qrCode.c_str());
         
-        const int LINE_THICKNESS = 5;  // Tloušťka čáry v pixelech
+        int qrSize = qrcode.size;
+        int scale = min((popupHeight - 120) / qrSize, 6);  // Scale QR to fit
+        int qrDrawSize = qrSize * scale;
+        int qrX = centerX - qrDrawSize / 2;
+        int qrY = contentY;
         
-        for (int i = 0; i < CZ_BORDER_POINTS; i++)
-        {
-            int px, py;
-            latLonToTilePixel(CZ_BORDER_GPS[i][1], CZ_BORDER_GPS[i][0], zoom, baseTileX, baseTileY, px, py);
-            
-            int screenX = mapX + offsetX + px * pixelScale;
-            int screenY = mapY + offsetY + py * pixelScale;
-            
-            if (prevX >= 0 && prevY >= 0)
-            {
-                // Kreslení tlusté čáry - více čar vedle sebe
-                int dx = abs(screenX - prevX);
-                int dy = abs(screenY - prevY);
-                int halfThick = LINE_THICKNESS / 2;
-                
-                if (dx >= dy) {
-                    // Horizontální nebo diagonální - posun v Y
-                    for (int t = -halfThick; t <= halfThick; t++) {
-                        display.drawLine(prevX, prevY + t, screenX, screenY + t, COLOR_RED);
-                    }
-                } else {
-                    // Vertikální - posun v X
-                    for (int t = -halfThick; t <= halfThick; t++) {
-                        display.drawLine(prevX + t, prevY, screenX + t, screenY, COLOR_RED);
-                    }
+        for (int y = 0; y < qrSize; y++) {
+            for (int x = 0; x < qrSize; x++) {
+                if (qrcode_getModule(&qrcode, x, y)) {
+                    display.fillRect(qrX + x * scale, qrY + y * scale, scale, scale, GxEPD_BLACK);
                 }
             }
-            
-            prevX = screenX;
-            prevY = screenY;
         }
+        contentY += qrDrawSize + 20;
     }
     
-    // DRUHÉ: Přes obrys vykresli radarové dlaždice srážek
-    if (data.hasRadarData && storage.isInitialized())
-    {
-        int tileCount = storage.getStoredTileCount();
-        LOGD("Decoding and drawing " + String(tileCount) + " tiles");
-        
-        // Nastav globální kontext pro PNG callback
-        g_displayPtr = &display;
-        g_mapX = mapX;
-        g_mapY = mapY;
-        g_clipX = mapX;
-        g_clipY = mapY;
-        g_clipW = mapWidth;
-        g_clipH = mapHeight;
-        g_tileScale = 1;  // Bez zmenšení
-        
-        // Pro pixelScale používáme globální proměnnou
-        g_pixelScale = pixelScale;
-        
-        PngDecoder decoder;
-        
-        // Dekóduj a vykresli každou dlaždici
-        for (int t = 0; t < tileCount && t < 4; t++)
-        {
-            String tilePath = storage.getTilePath(t);
-            
-            // Pozice dlaždice v gridu 2x2
-            int tileGridX = t % 2;
-            int tileGridY = t / 2;
-            
-            g_tileOffsetX = offsetX + tileGridX * 256 * pixelScale;
-            g_tileOffsetY = offsetY + tileGridY * 256 * pixelScale;
-            
-            LOGD("Decoding tile " + String(t) + " at offset " + 
-                 String(g_tileOffsetX) + "," + String(g_tileOffsetY));
-            
-            if (!decoder.decodeFromFile(tilePath.c_str(), pngLineCallback, NULL,
-                                        0, 0, g_clipX, g_clipY, g_clipW, g_clipH))
-            {
-                LOGD("Failed to decode tile " + String(t));
-            }
-        }
-        
-        g_displayPtr = NULL;
-        g_pixelScale = 1;  // Reset
-    }
-    else
-    {
-        // No radar data available - nakresli alespoň obrys (už je nakreslený výše)
-        int czX = mapX + mapWidth / 2;
-        int czY = mapY + mapHeight / 2;
-        display.drawText(SMALL, "Radar data není k dispozici", czX, czY, 
-                         CENTER, CENTER, 0, 0, COLOR_BLACK);
+    // Subtitle
+    if (info.subtitle.length() > 0) {
+        display.drawText(SMALL, info.subtitle, centerX, contentY,
+            CENTER, LEADING, 0, 0, GxEPD_DARKGREY);
     }
     
-    // Minimální info v rohu - čas radaru
-    if (data.radarTimestamp > 0)
-    {
-        struct tm* timeinfo = localtime(&data.radarTimestamp);
-        char timeStr[30];
-        strftime(timeStr, sizeof(timeStr), "Radar: %H:%M", timeinfo);
-        display.drawText(TINY, String(timeStr), screenWidth - marginX, marginY / 2 + 5, 
-                         TRAILING, CENTER, 0, 0, COLOR_BLACK);
+    // Temperature (if shown)
+    if (info.showTemperature) {
+        String tempStr = String(info.temperature, 1) + "°C";
+        display.drawText(SMALL, tempStr, popupX + popupWidth - 20, popupY + popupHeight - 30,
+            TRAILING, TRAILING, 0, 0, GxEPD_DARKGREY);
     }
     
-    display.updateFullscreen();
+    // Use windowed partial refresh - only updates popup area
+    display.updateWindow(popupX, popupY, popupWidth, popupHeight);
     display.endDraw();
-    
-    LOGD("Radar screen drawn");
+    display.setPopupMode(false);
 }
 
-void WeatherScreen::drawStatusScreen(String message)
+void WeatherScreen::drawWebSetupPopupOverlay(String softAPSSID, String softAPIP, String staSSID, String staIP)
+{
+    // Draw popup at bottom, aligned to 8 pixels
+    int popupHeight = 200;  // divisible by 8: 200 = 25*8
+    popupHeight = (popupHeight / 8) * 8;  // ensure divisible by 8
+    int popupWidth = display.getDisplayWidth();  // full width
+    int popupX = 0;
+    int popupY = display.getDisplayHeight() - popupHeight;
+    
+    display.setPopupMode(true, popupX, popupY, popupWidth, popupHeight);
+    display.beginDraw();
+    
+    display.fillRect(popupX, popupY, popupWidth, popupHeight, GxEPD_WHITE);
+    display.fillRect(popupX, popupY, popupWidth, 3, GxEPD_BLACK);  // Top border
+    
+    int textX = popupX + 20;
+    int textY = popupY + 30;
+    
+    display.drawText(MEDIUM, Localization::get(STR_STATUS_STARTING), textX, textY,
+        LEADING, LEADING, 0, 0, GxEPD_BLACK);
+    textY += 35;
+    
+    // Show AP info
+    display.drawText(TINY, "WiFi: " + softAPSSID, textX, textY,
+        LEADING, LEADING, 0, 0, GxEPD_DARKGREY);
+    textY += 25;
+    
+    display.drawText(TINY, "IP: " + softAPIP, textX, textY,
+        LEADING, LEADING, 0, 0, GxEPD_DARKGREY);
+    textY += 35;
+    
+    // Show STA info if connected
+    if (staIP != "0.0.0.0") {
+        display.drawText(TINY, String(Localization::get(STR_STATUS_CONNECTED_TO)) + ": " + staSSID, textX, textY,
+            LEADING, LEADING, 0, 0, GxEPD_DARKGREY);
+        textY += 25;
+        display.drawText(TINY, "IP: " + staIP, textX, textY,
+            LEADING, LEADING, 0, 0, GxEPD_DARKGREY);
+    }
+    
+    // Use windowed partial refresh
+    display.updateWindow(popupX, popupY, popupWidth, popupHeight);
+    display.endDraw();
+    display.setPopupMode(false);
+}
+
+void WeatherScreen::drawWeatherScreen(WeatherScreenData_t& screenData, WeatherData_t& weatherData)
 {
     display.beginDraw();
-    display.clear();
-    
-    display.drawText(MEDIUM, message, display.getDisplayWidth() / 2, display.getDisplayHeight() / 2, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    
-    display.updateFullscreen();
-    display.endDraw();
-}
-
-void WeatherScreen::drawErrorScreen(String error)
-{
-    display.beginDraw();
-    display.clear();
-    
-    display.drawText(LARGE, "Chyba", display.getDisplayWidth() / 2, display.getDisplayHeight() / 2 - 40, 
-                     CENTER, CENTER, 0, 0, COLOR_RED);
-    display.drawText(SMALL, error, display.getDisplayWidth() / 2, display.getDisplayHeight() / 2 + 20, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    display.drawText(TINY, "Stiskněte RESET pro restart", display.getDisplayWidth() / 2, display.getDisplayHeight() / 2 + 60, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    
-    display.updateFullscreen();
-    display.endDraw();
-}
-
-void WeatherScreen::drawConfigScreen(String ssid, String ip)
-{
-    display.beginDraw();
-    display.clear();
-    
-    display.drawText(LARGE, "Nastavení", display.getDisplayWidth() / 2, 60, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    
-    display.drawText(MEDIUM, "Připojte se k WiFi:", display.getDisplayWidth() / 2, 140, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    display.drawText(LARGE, ssid, display.getDisplayWidth() / 2, 190, 
-                     CENTER, CENTER, 0, 0, COLOR_RED);
-    
-    display.drawText(MEDIUM, "Nebo otevřete:", display.getDisplayWidth() / 2, 280, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    display.drawText(LARGE, "http://" + ip, display.getDisplayWidth() / 2, 330, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    
-    display.drawText(SMALL, "Zadejte lokaci a WiFi údaje", display.getDisplayWidth() / 2, 420, 
-                     CENTER, CENTER, 0, 0, COLOR_BLACK);
-    
-    display.updateFullscreen();
-    display.endDraw();
-}
-
-// ================== NEW WEATHER SCREEN LAYOUT ==================
-
-void WeatherScreen::drawWeatherScreen(WeatherScreenData_t& data, RadarStorage& storage, WeatherData_t& weather)
-{
-    LOGD("Drawing weather screen with new layout");
-    
-    display.beginDraw();
-    display.clear();
-    
-    // Layout constants for 800x480 display
-    int screenWidth = display.getDisplayWidth();   // 800
-    int screenHeight = display.getDisplayHeight(); // 480
-    int headerHeight = 40;
-    int statusBarHeight = 25;
-    int padding = 8;
-    
-    // Content area
-    int contentY = headerHeight;
-    int contentHeight = screenHeight - headerHeight - statusBarHeight;
-    
-    // Left column: Radar (1/4 width) + Current weather
-    int leftColWidth = screenWidth / 4;  // 200px
-    
-    // Right column: Hourly + Daily (3/4 width)
-    int rightColX = leftColWidth;
-    int rightColWidth = screenWidth - leftColWidth;  // 600px
-    
-    // Draw header with location name
-    drawHeader(data, weather.locationName);
-    
-    // === LEFT COLUMN ===
-    
-    // Radar mini map (top-left quarter)
-    int radarHeight = contentHeight / 2;
-    drawRadarMini(data, storage, 0, contentY, leftColWidth, radarHeight);
-    
-    // Current weather (below radar)
-    int currentY = contentY + radarHeight;
-    int currentHeight = contentHeight - radarHeight;
-    drawCurrentWeather(weather, 0, currentY, leftColWidth, currentHeight);
-    
-    // === RIGHT COLUMN ===
-    
-    // Hourly forecast (top-right, about 1/3 of right column height)
-    int hourlyHeight = contentHeight / 3;
-    drawHourlyForecast(weather, rightColX, contentY, rightColWidth, hourlyHeight);
-    
-    // Daily forecast (bottom-right, remaining 2/3)
-    int dailyY = contentY + hourlyHeight;
-    int dailyHeight = contentHeight - hourlyHeight;
-    drawDailyForecast(weather, rightColX, dailyY, rightColWidth, dailyHeight);
-    
-    // Draw status bar at bottom
-    drawStatusBar(data);
-    
-    display.updateFullscreen();
-    display.endDraw();
-    
-    LOGD("Weather screen drawn");
-}
-
-void WeatherScreen::drawRadarMini(WeatherScreenData_t& data, RadarStorage& storage, int x, int y, int w, int h)
-{
-    // Border
-    display.drawRect(x, y, w, h, COLOR_BLACK);
-    
-    // Title
-    display.drawText(EXTRA_SMALL, "Radar srážek", x + w / 2, y + 10, CENTER, CENTER, 0, 0, COLOR_BLACK);
-    
-    int mapX = x + 4;
-    int mapY = y + 20;
-    int mapW = w - 8;
-    int mapH = h - 30;
-    
-    // Map border
-    display.drawRect(mapX, mapY, mapW, mapH, COLOR_BLACK);
-    
-    if (data.hasRadarData && storage.isInitialized())
-    {
-        // Simplified radar display for mini view
-        int zoom = 6;
-        int baseTileX = 34;
-        int baseTileY = 21;
+    display.firstPage();
+    do {
+        display.clear();
         
-        // For mini view, use smaller scale
-        int pixelScale = 1;  // 1:1 mapping, we'll crop to fit
+        int screenW = display.getDisplayWidth();
+        int screenH = display.getDisplayHeight();
         
-        // ČR souřadnice v tile pixelech
-        int czStartX = 8;
-        int czStartY = 145;
-        int czWidth = 240;
-        int czHeight = 150;
+        int y = 0;
         
-        // Scale to fit in mapW x mapH
-        float scaleX = (float)mapW / czWidth;
-        float scaleY = (float)mapH / czHeight;
-        float scale = min(scaleX, scaleY);
+        // ========== Header ==========
+        // "Weather Dashboard" + Location + Date
+        int headerHeight = 90;
+        drawHeader(0, y, screenW, screenData.locationName.c_str(), screenData.currentTime);
+        y += headerHeight;
         
-        int scaledW = czWidth * scale;
-        int scaledH = czHeight * scale;
-        int offsetX = (mapW - scaledW) / 2;
-        int offsetY = (mapH - scaledH) / 2;
+        drawHorizontalLine(MARGIN, y, screenW - 2 * MARGIN);
+        y += 10;
         
-        // Draw simplified border of Czech Republic
-        extern void latLonToTilePixel(double lat, double lon, int zoom, int baseTileX, int baseTileY, int& px, int& py);
-        extern const double CZ_BORDER_GPS[][2];
-        extern const int CZ_BORDER_POINTS;
+        // ========== Current Weather ==========
+        // Large icon + temperature + details (wind, humidity, pressure)
+        int currentHeight = 200;
+        drawCurrentWeather(0, y, screenW, currentHeight, weatherData.current);
+        y += currentHeight;
         
-        int prevX = -1, prevY = -1;
-        for (int i = 0; i < CZ_BORDER_POINTS; i += 3)  // Every 3rd point for simplified outline
-        {
-            int px, py;
-            latLonToTilePixel(CZ_BORDER_GPS[i][1], CZ_BORDER_GPS[i][0], zoom, baseTileX, baseTileY, px, py);
-            
-            int screenX = mapX + offsetX + (px - czStartX) * scale;
-            int screenY = mapY + offsetY + (py - czStartY) * scale;
-            
-            if (prevX >= 0 && prevY >= 0)
-            {
-                display.drawLine(prevX, prevY, screenX, screenY, COLOR_RED);
-            }
-            
-            prevX = screenX;
-            prevY = screenY;
+        drawHorizontalLine(MARGIN, y, screenW - 2 * MARGIN);
+        y += 10;
+        
+        // ========== Today's Forecast ==========
+        // Morning, Afternoon, Evening, Night
+        int todayHeight = 180;
+        drawTodayForecast(0, y, screenW, todayHeight, weatherData.hourly, weatherData.hourlyCount, screenData.currentTime);
+        y += todayHeight;
+        
+        drawHorizontalLine(MARGIN, y, screenW - 2 * MARGIN);
+        y += 10;
+        
+        // ========== 3-Day Outlook ==========
+        int outlookHeight = 180;
+        drawDailyOutlook(0, y, screenW, outlookHeight, weatherData.daily, weatherData.dailyCount);
+        y += outlookHeight;
+        
+        drawHorizontalLine(MARGIN, y, screenW - 2 * MARGIN);
+        y += 10;
+        
+        // ========== Footer ==========
+        // UV Index + Sunrise/Sunset
+        if (weatherData.dailyCount > 0) {
+            // UV index is estimated from weather code (not available in API)
+            int uvIndex = (weatherData.current.isDay && weatherData.current.weatherCode <= 3) ? 5 : 2;
+            drawFooter(0, y, screenW, weatherData.daily[0], uvIndex);
         }
         
-        // Radar time
-        if (data.radarTimestamp > 0)
-        {
-            struct tm* timeinfo = localtime(&data.radarTimestamp);
-            char timeStr[10];
-            strftime(timeStr, sizeof(timeStr), "%H:%M", timeinfo);
-            display.drawText(EXTRA_SMALL, String(timeStr), x + w - 5, y + h - 8, TRAILING, CENTER, 0, 0, COLOR_BLACK);
-        }
-    }
-    else
-    {
-        display.drawText(EXTRA_SMALL, "N/A", x + w / 2, y + h / 2, CENTER, CENTER, 0, 0, COLOR_BLACK);
-    }
+    } while (display.nextPage());
+    display.endDraw();
 }
 
-void WeatherScreen::drawCurrentWeather(WeatherData_t& weather, int x, int y, int w, int h)
+// ============================================================================
+// Header Section
+// ============================================================================
+
+void WeatherScreen::drawHeader(int x, int y, int width, const char* locationName, time_t currentTime)
 {
-    // Border
-    display.drawRect(x, y, w, h, COLOR_BLACK);
+    int centerX = x + width / 2;
     
-    if (!weather.valid) {
-        display.drawText(SMALL, "Načítání...", x + w / 2, y + h / 2, CENTER, CENTER, 0, 0, COLOR_BLACK);
-        return;
-    }
+    // Title: "Weather Dashboard"
+    display.drawText(LARGE, Localization::get(STR_LABEL_WEATHER_DASHBOARD), centerX, y + 10,
+        CENTER, LEADING, 0, 0, GxEPD_BLACK);
     
-    int centerX = x + w / 2;
-    int iconSize = 48;
+    // Location
+    display.drawText(SMALL, locationName, centerX, y + 45,
+        CENTER, LEADING, 0, 0, GxEPD_DARKGREY);
     
-    // Weather icon
-    WeatherIcons::drawIconForCode(display, weather.current.weatherCode, 
-                                  centerX, y + 35, iconSize, weather.current.isDay);
+    // Date (e.g., "Tuesday, 24 Jan")
+    struct tm timeinfo;
+    localtime_r(&currentTime, &timeinfo);
     
-    // Temperature (big)
-    String tempStr = String((int)round(weather.current.temperature)) + "°";
-    display.drawText(LARGE, tempStr, centerX, y + 85, CENTER, CENTER, 0, 0, COLOR_BLACK);
+    String dateStr = String(Localization::getDayFull(timeinfo.tm_wday)) + ", " + 
+                     String(timeinfo.tm_mday) + " " + 
+                     Localization::getMonthShort(timeinfo.tm_mon);
     
-    // Feels like
-    String feelsLike = "Pocitově " + String((int)round(weather.current.apparentTemperature)) + "°";
-    display.drawText(EXTRA_SMALL, feelsLike, centerX, y + 115, CENTER, CENTER, 0, 0, COLOR_BLACK);
+    display.drawText(SMALL, dateStr, centerX, y + 70,
+        CENTER, LEADING, 0, 0, GxEPD_DARKGREY);
+}
+
+// ============================================================================
+// Current Weather Section
+// ============================================================================
+
+void WeatherScreen::drawCurrentWeather(int x, int y, int width, int height, CurrentWeather_t& current)
+{
+    // Determine if day/night
+    bool isDay = current.isDay;
     
-    // Weather description
-    String desc = OpenMeteoAPI::getWeatherDescription(weather.current.weatherCode);
-    display.drawText(TINY, desc, centerX, y + 135, CENTER, CENTER, 0, 0, COLOR_BLACK);
+    // Left side: Large weather icon
+    int iconSize = 120;
+    int iconX = x + MARGIN + 30;
+    int iconY = y + (height - iconSize) / 2;
+    drawWeatherIcon(iconX, iconY, iconSize, current.weatherCode, isDay);
     
-    // Additional info
-    int infoY = y + 160;
-    int lineH = 18;
+    // Center: Large temperature
+    int tempX = x + width / 2 - 20;
+    int tempY = y + 30;
+    String tempStr = String((int)round(current.temperature)) + "°";
+    display.drawText(HUGE, tempStr, tempX, tempY, LEADING, LEADING, 0, 0, GxEPD_BLACK);
     
-    // Humidity
-    display.drawText(EXTRA_SMALL, "Vlhkost: " + String(weather.current.humidity) + "%", 
-                     centerX, infoY, CENTER, CENTER, 0, 0, COLOR_BLACK);
+    // Right of temperature: Weather description and feels like
+    int descX = tempX + 100;
+    String weatherDesc = Localization::get((StringID)(STR_WEATHER_CLEAR + min(current.weatherCode, 13)));
+    display.drawText(SMALL, weatherDesc, descX, tempY + 10, LEADING, LEADING, 0, 0, GxEPD_BLACK);
+    
+    String feelsLike = String(Localization::get(STR_WEATHER_FEELS_LIKE)) + ": " + 
+                       String((int)round(current.apparentTemperature)) + "°";
+    display.drawText(TINY, feelsLike, descX, tempY + 35, LEADING, LEADING, 0, 0, GxEPD_DARKGREY);
+    
+    // Details on the right side
+    int detailsX = x + width - MARGIN - 150;
+    int detailsY = y + 50;
+    int detailSpacing = 35;
     
     // Wind
-    String windStr = "Vítr: " + String((int)weather.current.windSpeed) + " km/h";
-    display.drawText(EXTRA_SMALL, windStr, centerX, infoY + lineH, CENTER, CENTER, 0, 0, COLOR_BLACK);
+    String windStr = "• " + String(Localization::get(STR_LABEL_WIND)) + ": " + 
+                     String((int)current.windSpeed) + " km/h";
+    display.drawText(TINY, windStr, detailsX, detailsY, LEADING, LEADING, 0, 0, GxEPD_BLACK);
+    detailsY += detailSpacing;
     
-    // Precipitation if any
-    if (weather.current.precipitation > 0)
-    {
-        String precipStr = "Srážky: " + String(weather.current.precipitation, 1) + " mm";
-        display.drawText(EXTRA_SMALL, precipStr, centerX, infoY + lineH * 2, CENTER, CENTER, 0, 0, COLOR_BLACK);
-    }
+    // Humidity
+    String humidityStr = "• " + String(Localization::get(STR_LABEL_HUMIDITY)) + ": " + 
+                         String(current.humidity) + "%";
+    display.drawText(TINY, humidityStr, detailsX, detailsY, LEADING, LEADING, 0, 0, GxEPD_BLACK);
+    detailsY += detailSpacing;
+    
+    // Precipitation
+    String precipStr = "• " + String(Localization::get(STR_LABEL_PRECIPITATION)) + ": " + 
+                       String(current.precipitation, 1) + " mm";
+    display.drawText(TINY, precipStr, detailsX, detailsY, LEADING, LEADING, 0, 0, GxEPD_BLACK);
 }
 
-void WeatherScreen::drawHourlyForecast(WeatherData_t& weather, int x, int y, int w, int h)
+// ============================================================================
+// Today's Forecast Section (4 time periods)
+// ============================================================================
+
+void WeatherScreen::drawTodayForecast(int x, int y, int width, int height, HourlyForecast_t* hourly, int count, time_t currentTime)
 {
-    // Border
-    display.drawRect(x, y, w, h, COLOR_BLACK);
-    
     // Title
-    display.drawText(SMALL, "Hodinová předpověď", x + 10, y + 15, LEADING, CENTER, 0, 0, COLOR_BLACK);
+    display.drawText(MEDIUM, Localization::get(STR_LABEL_TODAYS_FORECAST), x + MARGIN, y + 5,
+        LEADING, LEADING, 0, 0, GxEPD_BLACK);
     
-    if (!weather.valid || weather.hourlyCount == 0) {
-        display.drawText(SMALL, "Načítání...", x + w / 2, y + h / 2, CENTER, CENTER, 0, 0, COLOR_BLACK);
-        return;
-    }
+    // Find relevant hours: Morning (6-12), Afternoon (12-18), Evening (18-22), Night (22-6)
+    // We'll pick representative hours: 9, 14, 19, 23
+    int targetHours[] = {9, 14, 19, 23};
+    int periodCount = 4;
     
-    // Show 8 hours
-    int hoursToShow = min(8, weather.hourlyCount);
-    int colWidth = (w - 20) / hoursToShow;
-    int startX = x + 10 + colWidth / 2;
-    int iconY = y + 50;
-    int tempY = y + 90;
-    int precipY = y + 110;
-    int iconSize = 28;
+    struct tm currentTm;
+    localtime_r(&currentTime, &currentTm);
+    int currentHour = currentTm.tm_hour;
     
-    for (int i = 0; i < hoursToShow; i++)
-    {
-        int colX = startX + i * colWidth;
-        HourlyForecast_t& hour = weather.hourly[i];
+    int columnWidth = (width - 2 * MARGIN) / periodCount;
+    int contentY = y + 40;
+    int iconSize = 50;
+    
+    for (int p = 0; p < periodCount; p++) {
+        int targetHour = targetHours[p];
         
-        // Hour
-        String hourStr = String(hour.hour) + ":00";
-        if (i == 0) hourStr = "Teď";
-        display.drawText(EXTRA_SMALL, hourStr, colX, y + 32, CENTER, CENTER, 0, 0, COLOR_BLACK);
+        // Find the hourly forecast closest to this target
+        int bestIdx = -1;
+        int bestDiff = 999;
+        for (int i = 0; i < min(count, 24); i++) {
+            int diff = abs(hourly[i].hour - targetHour);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                bestIdx = i;
+            }
+        }
         
-        // Icon
-        bool isDay = (hour.hour >= 6 && hour.hour < 21);
-        WeatherIcons::drawIconForCode(display, hour.weatherCode, colX, iconY, iconSize, isDay);
+        int colX = x + MARGIN + p * columnWidth + columnWidth / 2;
         
-        // Temperature
-        String temp = String((int)round(hour.temperature)) + "°";
-        display.drawText(TINY, temp, colX, tempY, CENTER, CENTER, 0, 0, COLOR_BLACK);
+        // Period name
+        const char* periodName = getTimePeriodName(targetHour);
+        display.drawText(TINY, periodName, colX, contentY, CENTER, LEADING, 0, 0, GxEPD_BLACK);
         
-        // Precipitation probability if > 0
-        if (hour.precipitationProbability > 0)
-        {
-            String precip = String(hour.precipitationProbability) + "%";
-            display.drawText(EXTRA_SMALL, precip, colX, precipY, CENTER, CENTER, 0, 0, COLOR_BLACK);
+        if (bestIdx >= 0) {
+            HourlyForecast_t& h = hourly[bestIdx];
+            
+            // Icon
+            bool isDay = (targetHour >= 6 && targetHour < 20);
+            drawWeatherIcon(colX - iconSize/2, contentY + 20, iconSize, h.weatherCode, isDay);
+            
+            // Temperature
+            String tempStr = String((int)round(h.temperature)) + "°";
+            display.drawText(MEDIUM, tempStr, colX, contentY + 75, CENTER, LEADING, 0, 0, GxEPD_BLACK);
+            
+            // Description
+            String desc = Localization::get((StringID)(STR_WEATHER_CLEAR + min(h.weatherCode, 13)));
+            display.drawText(EXTRA_SMALL, desc, colX, contentY + 105, CENTER, LEADING, 0, 0, GxEPD_DARKGREY);
         }
     }
 }
 
-void WeatherScreen::drawDailyForecast(WeatherData_t& weather, int x, int y, int w, int h)
+// ============================================================================
+// 3-Day Outlook Section
+// ============================================================================
+
+void WeatherScreen::drawDailyOutlook(int x, int y, int width, int height, DailyForecast_t* daily, int count)
 {
-    // Border
-    display.drawRect(x, y, w, h, COLOR_BLACK);
-    
     // Title
-    display.drawText(SMALL, "Týdenní předpověď", x + 10, y + 15, LEADING, CENTER, 0, 0, COLOR_BLACK);
+    display.drawText(MEDIUM, Localization::get(STR_LABEL_3DAY_OUTLOOK), x + MARGIN, y + 5,
+        LEADING, LEADING, 0, 0, GxEPD_BLACK);
     
-    if (!weather.valid || weather.dailyCount == 0) {
-        display.drawText(SMALL, "Načítání...", x + w / 2, y + h / 2, CENTER, CENTER, 0, 0, COLOR_BLACK);
-        return;
-    }
+    // Show next 3 days (skip today = index 0)
+    int daysToShow = min(count - 1, 3);
+    if (daysToShow <= 0) return;
     
-    // Show 7 days in rows
-    int daysToShow = min(7, weather.dailyCount);
-    int rowHeight = (h - 35) / daysToShow;
-    int startY = y + 35;
-    int iconSize = 24;
+    int columnWidth = (width - 2 * MARGIN) / daysToShow;
+    int contentY = y + 40;
+    int iconSize = 50;
     
-    // Column positions
-    int dayNameX = x + 50;
-    int iconX = x + 120;
-    int tempMaxX = x + 200;
-    int tempMinX = x + 270;
-    int precipX = x + 350;
-    int descX = x + 450;
-    
-    for (int i = 0; i < daysToShow; i++)
-    {
-        int rowY = startY + i * rowHeight + rowHeight / 2;
-        DailyForecast_t& day = weather.daily[i];
+    for (int d = 0; d < daysToShow; d++) {
+        DailyForecast_t& day = daily[d + 1];  // Skip today
+        
+        int colX = x + MARGIN + d * columnWidth + columnWidth / 2;
         
         // Day name
-        String dayName = (i == 0) ? "Dnes" : OpenMeteoAPI::getDayNameShort(day.dayOfWeek);
-        String dateStr = String(day.dayOfMonth) + "." + String(day.month) + ".";
-        display.drawText(TINY, dayName, dayNameX, rowY - 8, CENTER, CENTER, 0, 0, COLOR_BLACK);
-        display.drawText(EXTRA_SMALL, dateStr, dayNameX, rowY + 8, CENTER, CENTER, 0, 0, COLOR_BLACK);
+        display.drawText(SMALL, Localization::getDayShort(day.dayOfWeek), colX, contentY, 
+            CENTER, LEADING, 0, 0, GxEPD_BLACK);
         
         // Icon
-        WeatherIcons::drawIconForCode(display, day.weatherCode, iconX, rowY, iconSize, true);
+        drawWeatherIcon(colX - iconSize/2, contentY + 25, iconSize, day.weatherCode, true);
         
-        // Max temp (bold/red)
-        String maxTemp = String((int)round(day.tempMax)) + "°";
-        display.drawText(SMALL, maxTemp, tempMaxX, rowY, CENTER, CENTER, 0, 0, COLOR_BLACK);
+        // Description
+        String desc = Localization::get((StringID)(STR_WEATHER_CLEAR + min(day.weatherCode, 13)));
+        display.drawText(EXTRA_SMALL, desc, colX, contentY + 80, CENTER, LEADING, 0, 0, GxEPD_DARKGREY);
         
-        // Min temp (smaller)
-        String minTemp = String((int)round(day.tempMin)) + "°";
-        display.drawText(TINY, minTemp, tempMinX, rowY, CENTER, CENTER, 0, 0, COLOR_BLACK);
-        
-        // Precipitation
-        if (day.precipitationProbability > 0)
-        {
-            String precipStr = String(day.precipitationProbability) + "%";
-            if (day.precipitationSum > 0)
-            {
-                precipStr += " " + String(day.precipitationSum, 1) + "mm";
+        // High/Low temps
+        String highStr = String(Localization::get(STR_LABEL_HIGH)) + ": " + String((int)round(day.tempMax)) + "°";
+        String lowStr = String(Localization::get(STR_LABEL_LOW)) + ": " + String((int)round(day.tempMin)) + "°";
+        display.drawText(TINY, highStr, colX, contentY + 105, CENTER, LEADING, 0, 0, GxEPD_BLACK);
+        display.drawText(TINY, lowStr, colX, contentY + 125, CENTER, LEADING, 0, 0, GxEPD_DARKGREY);
+    }
+}
+
+// ============================================================================
+// Footer Section (UV Index + Sunrise/Sunset)
+// ============================================================================
+
+void WeatherScreen::drawFooter(int x, int y, int width, DailyForecast_t& today, int uvIndex)
+{
+    int halfWidth = width / 2;
+    
+    // Left side: UV Index
+    int uvX = x + MARGIN;
+    display.drawText(SMALL, Localization::get(STR_LABEL_UV_INDEX), uvX, y + 5,
+        LEADING, LEADING, 0, 0, GxEPD_BLACK);
+    
+    // UV level bar
+    int barX = uvX;
+    int barY = y + 35;
+    int barWidth = 150;
+    int barHeight = 20;
+    
+    // Draw UV bar background
+    display.fillRect(barX, barY, barWidth, barHeight, GxEPD_LIGHTGREY);
+    
+    // UV level indicator (0-11+ scale)
+    int uvLevel = min(uvIndex, 11);
+    int indicatorWidth = (barWidth * uvLevel) / 11;
+    display.fillRect(barX, barY, indicatorWidth, barHeight, GxEPD_DARKGREY);
+    
+    // UV level text
+    const char* uvText;
+    if (uvIndex <= 2) uvText = Localization::get(STR_UV_LOW);
+    else if (uvIndex <= 5) uvText = Localization::get(STR_UV_MODERATE);
+    else if (uvIndex <= 7) uvText = Localization::get(STR_UV_HIGH);
+    else if (uvIndex <= 10) uvText = Localization::get(STR_UV_VERY_HIGH);
+    else uvText = Localization::get(STR_UV_EXTREME);
+    
+    display.drawText(TINY, uvText, barX + barWidth + 10, barY + 3,
+        LEADING, LEADING, 0, 0, GxEPD_BLACK);
+    
+    // Right side: Sunrise & Sunset
+    int sunX = x + halfWidth + 30;
+    display.drawText(SMALL, Localization::get(STR_LABEL_SUNRISE_SUNSET), sunX, y + 5,
+        LEADING, LEADING, 0, 0, GxEPD_BLACK);
+    
+    // Sunrise icon (simple sun rising)
+    drawWeatherIcon(sunX, y + 30, 40, 0, true);  // Sun icon
+    
+    // Format sunrise/sunset times (remove date prefix if present)
+    String sunriseTime = today.sunrise;
+    String sunsetTime = today.sunset;
+    
+    // Extract time part (format: "2024-01-15T07:30")
+    int tIdx = sunriseTime.indexOf('T');
+    if (tIdx > 0) {
+        sunriseTime = sunriseTime.substring(tIdx + 1, tIdx + 6);
+    }
+    tIdx = sunsetTime.indexOf('T');
+    if (tIdx > 0) {
+        sunsetTime = sunsetTime.substring(tIdx + 1, tIdx + 6);
+    }
+    
+    String sunriseStr = String(Localization::get(STR_LABEL_SUNRISE)) + ": " + sunriseTime;
+    display.drawText(TINY, sunriseStr, sunX + 50, y + 35, LEADING, LEADING, 0, 0, GxEPD_BLACK);
+    
+    String sunsetStr = String(Localization::get(STR_LABEL_SUNSET)) + ": " + sunsetTime;
+    display.drawText(TINY, sunsetStr, sunX + 50, y + 55, LEADING, LEADING, 0, 0, GxEPD_BLACK);
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+void WeatherScreen::drawHorizontalLine(int x, int y, int width)
+{
+    display.fillRect(x, y, width, 1, GxEPD_LIGHTGREY);
+}
+
+void WeatherScreen::drawWeatherIcon(int x, int y, int size, int weatherCode, bool isDay)
+{
+    const uint8_t* icon = getWeatherIcon(weatherCode, isDay);
+    
+    // Scale icon to desired size (icons are 64x64)
+    float scale = (float)size / 64.0f;
+    
+    // Draw icon bitmap
+    for (int iy = 0; iy < 64; iy++) {
+        for (int ix = 0; ix < 64; ix++) {
+            int byteIdx = (iy * 64 + ix) / 8;
+            int bitIdx = 7 - (ix % 8);
+            
+            if (pgm_read_byte(&icon[byteIdx]) & (1 << bitIdx)) {
+                int dx = x + (int)(ix * scale);
+                int dy = y + (int)(iy * scale);
+                
+                if (scale >= 1.5f) {
+                    // Draw scaled pixel as larger block
+                    int blockSize = (int)scale;
+                    display.fillRect(dx, dy, blockSize, blockSize, GxEPD_BLACK);
+                } else {
+                    display.drawPixel(dx, dy, GxEPD_BLACK);
+                }
             }
-            display.drawText(EXTRA_SMALL, precipStr, precipX, rowY, CENTER, CENTER, 0, 0, COLOR_BLACK);
-        }
-        
-        // Short description
-        String desc = OpenMeteoAPI::getWeatherDescription(day.weatherCode);
-        if (desc.length() > 15) desc = desc.substring(0, 14) + ".";
-        display.drawText(EXTRA_SMALL, desc, descX, rowY, LEADING, CENTER, 0, 0, COLOR_BLACK);
-        
-        // Separator line
-        if (i < daysToShow - 1)
-        {
-            display.drawLine(x + 10, startY + (i + 1) * rowHeight, x + w - 10, startY + (i + 1) * rowHeight, COLOR_BLACK);
         }
     }
+}
+
+void WeatherScreen::drawBatteryIcon(int x, int y, int level)
+{
+    // Battery outline
+    int w = 24, h = 12;
+    display.fillRect(x, y, w, h, GxEPD_WHITE);
+    display.fillRect(x, y, w, 1, GxEPD_BLACK);  // Top
+    display.fillRect(x, y + h - 1, w, 1, GxEPD_BLACK);  // Bottom
+    display.fillRect(x, y, 1, h, GxEPD_BLACK);  // Left
+    display.fillRect(x + w - 1, y, 1, h, GxEPD_BLACK);  // Right
+    display.fillRect(x + w, y + 3, 2, 6, GxEPD_BLACK);  // Tip
+    
+    // Fill level
+    int fillWidth = (w - 4) * level / 100;
+    uint16_t color = level > 20 ? GxEPD_BLACK : GxEPD_DARKGREY;
+    display.fillRect(x + 2, y + 2, fillWidth, h - 4, color);
+}
+
+void WeatherScreen::drawWiFiIcon(int x, int y, int level)
+{
+    // Simple WiFi bars
+    int barWidth = 4;
+    int spacing = 2;
+    int bars = (level * 4) / 100;  // 0-4 bars
+    
+    for (int i = 0; i < 4; i++) {
+        int barHeight = 4 + i * 3;
+        int barX = x + i * (barWidth + spacing);
+        int barY = y + (16 - barHeight);
+        
+        uint16_t color = (i < bars) ? GxEPD_BLACK : GxEPD_LIGHTGREY;
+        display.fillRect(barX, barY, barWidth, barHeight, color);
+    }
+}
+
+const char* WeatherScreen::getTimePeriodName(int hour)
+{
+    if (hour >= 5 && hour < 12) return Localization::get(STR_TIME_MORNING);
+    if (hour >= 12 && hour < 17) return Localization::get(STR_TIME_AFTERNOON);
+    if (hour >= 17 && hour < 21) return Localization::get(STR_TIME_EVENING);
+    return Localization::get(STR_TIME_NIGHT);
 }

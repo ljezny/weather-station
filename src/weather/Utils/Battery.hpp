@@ -14,7 +14,7 @@ typedef enum BatteryLevel
 } BatteryLevel_t;
 
 #define ADC_MEASURE_CNT 5
-#define ADC_DIVIDER (2.3 / 1.3)
+#define ADC_DIVIDER (2.3 / 1.3) // resistor divider R1 = 1M and R2 = 1.3M on PCB
 #define BATT_PIN (34)
 
 class Battery
@@ -22,7 +22,7 @@ class Battery
 public:
     Battery()
     {
-        esp_adc_cal_characterize(
+        esp_adc_cal_value_t val_type = esp_adc_cal_characterize(
             ADC_UNIT_2,
             ADC_ATTEN_DB_12,
             ADC_WIDTH_BIT_12,
@@ -32,12 +32,13 @@ public:
 
     bool setup()
     {
-        esp_adc_cal_characterize(
+        esp_adc_cal_value_t val_type = esp_adc_cal_characterize(
             ADC_UNIT_2,
             ADC_ATTEN_DB_12,
             ADC_WIDTH_BIT_12,
             1100,
             &adc_chars);
+
         return true;
     }
 
@@ -57,6 +58,7 @@ private:
             voltageRaw += analogRead(BATT_PIN);
         }
         voltageRaw /= ADC_MEASURE_CNT;
+
         return (float)esp_adc_cal_raw_to_voltage(voltageRaw, &adc_chars) * ADC_DIVIDER / 1000.0;
     }
 

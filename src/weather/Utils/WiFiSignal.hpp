@@ -7,11 +7,13 @@ class WiFiSignal
 public:
     int getWiFiSignalLevel()
     {
-        int rssi = WiFi.RSSI();
-        if (rssi >= -50)
-            return 100;
-        if (rssi <= -100)
+        if (WiFi.status() != WL_CONNECTED)
+        {
             return 0;
-        return 2 * (rssi + 100);
+        }
+        
+        int rssi = WiFi.RSSI();
+        // Convert RSSI to percentage (0-100)
+        return min(max(2 * (rssi + 100), 0), 100);
     }
 };
