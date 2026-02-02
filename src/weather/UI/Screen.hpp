@@ -36,12 +36,14 @@ typedef struct ScreenInfoData {
 
 /**
  * Weather Screen - handles all display drawing for weather station
- * Design based on Weather Dashboard mockup:
- * - Header: Title + Location + Date
- * - Current weather: Large icon + temperature + details
- * - Today's Forecast: 4 time periods (Morning, Afternoon, Evening, Night)
- * - 3-Day Outlook: Next 3 days with High/Low
- * - Footer: UV Index + Sunrise/Sunset
+ * 
+ * ULTIMATE DASHBOARD DESIGN - Maximum Information Density:
+ * - Header Bar: Location, Time, Date, Battery, WiFi status
+ * - Current Weather Hero: Large icon + giant temperature + description
+ * - Weather Details Grid: 6 metric cards (Wind, Humidity, Precipitation, Max/Min, Rain, UV)
+ * - Hourly Timeline: Next 8 hours with icons, temps, and precipitation %
+ * - 7-Day Forecast: Full week with detailed daily info
+ * - Sun & Moon Info: Sunrise, Sunset, Day length, Last update
  */
 class WeatherScreen
 {
@@ -77,10 +79,19 @@ private:
     Display102 display;
     
     // Layout constants
-    static const int MARGIN = 20;
-    static const int SPACING = 15;
+    static const int MARGIN = 15;
+    static const int SPACING = 10;
     
-    // Main sections
+    // NEW: Ultimate Dashboard Sections
+    void drawHeaderBar(int x, int y, int width, WeatherScreenData_t& screenData, CurrentWeather_t& current);
+    void drawCurrentWeatherHero(int x, int y, int width, int height, CurrentWeather_t& current);
+    void drawWeatherDetailsGrid(int x, int y, int width, int height, CurrentWeather_t& current, DailyForecast_t& today);
+    void drawMetricCard(int x, int y, int w, int h, String label, String value, String subtext);
+    void drawHourlyTimeline(int x, int y, int width, int height, HourlyForecast_t* hourly, int count, time_t currentTime);
+    void draw7DayForecast(int x, int y, int width, int height, DailyForecast_t* daily, int count);
+    void drawSunMoonInfo(int x, int y, int width, int height, DailyForecast_t& today, time_t currentTime);
+    
+    // Legacy sections (kept for compatibility)
     void drawHeader(int x, int y, int width, const char* locationName, time_t currentTime);
     void drawCurrentWeather(int x, int y, int width, int height, CurrentWeather_t& current);
     void drawTodayForecast(int x, int y, int width, int height, HourlyForecast_t* hourly, int count, time_t currentTime);
@@ -89,9 +100,19 @@ private:
     
     // Helper functions
     void drawWeatherIcon(int x, int y, int size, int weatherCode, bool isDay);
+    void drawWeatherIconInverted(int x, int y, int size, int weatherCode, bool isDay);
     void drawBatteryIcon(int x, int y, int level);
+    void drawBatteryIconInverted(int x, int y, int level);
     void drawWiFiIcon(int x, int y, int level);
+    void drawWiFiIconInverted(int x, int y, int level);
     void drawHorizontalLine(int x, int y, int width);
+    
+    // Text helpers
+    String getWeatherDescription(int weatherCode);
+    String getWeatherDescriptionShort(int weatherCode);
+    String getWindDirection(int degrees);
+    int estimateUVIndex(int weatherCode, bool isDay);
+    String getUVLevelText(int uvIndex);
     
     // Get localized time period name
     const char* getTimePeriodName(int hour);
